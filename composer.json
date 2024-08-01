@@ -1,0 +1,40 @@
+{
+  "name": "triangle/http",
+  "description": "Triangle HTTP Component",
+  "type": "library",
+  "keywords": [
+    "localzet",
+    "Triangle",
+    "HTTP"
+  ],
+  "license": "AGPL-3.0-or-later",
+  "authors": [
+    {
+      "role": "Developer",
+      "name": "Ivan Zorin",
+      "email": "creator@localzet.com",
+      "homepage": "https://github.com/localzet"
+    }
+  ],
+  "support": {
+    "email": "support@localzet.com",
+    "source": "https://github.com/Triangle-org/Http"
+  },
+  "autoload": {
+    "psr-4": {
+      "Triangle\\": "",
+      "Triangle\\Http\\": "src",
+      "Triangle\\Exception\\": "src/Exception",
+      "support\\": "src/Support/",
+      "Support\\": "src/Support/"
+    }
+  },
+  "require": {
+    "php": ">=8.0",
+    "triangle/engine": ">=6.3",
+    "triangle/router": "^1.0",
+    "triangle/middleware": "^1.0"
+  },
+  "suggest": {
+  }
+}
