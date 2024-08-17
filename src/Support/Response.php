@@ -26,15 +26,13 @@
 
 namespace support;
 
-use AllowDynamicProperties;
-
 /**
  * Класс Response
  * Этот класс наследует функциональность от класса \Triangle\Engine\Http\Response и может быть расширен для обработки HTTP-ответов в вашем приложении.
  *
  * @link https://www.php-fig.org/psr/psr-7/
  */
-#[AllowDynamicProperties]
-class Response extends \Triangle\Engine\Http\Response
+#[\AllowDynamicProperties]
+class Response extends \Triangle\Http\Response
 {
 }

@@ -31,6 +31,7 @@ use Throwable;
 use Triangle\Http\Request;
 use Triangle\Http\Response;
 use function nl2br;
+use function responseJson;
 
 /**
  * Class Events
@@ -126,7 +127,7 @@ class ExceptionHandler implements ExceptionHandlerInterface
             $json['traces'] = nl2br((string)$exception);
         }
 
-        if ($request->expectsJson()) return \responseJson($json);
+        if ($request->expectsJson()) return responseJson($json);
 
         return \response($json, 500);
     }
