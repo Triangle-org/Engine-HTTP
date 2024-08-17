@@ -136,10 +136,10 @@ class App
 
         new Path(
             $basePath ?? Path::basePath(),
-            $appPath ?? Path::appPath(),
             $configPath ?? Path::configPath(),
-            $publicPath ?? Path::publicPath(),
-            $runtimePath ?? Path::runtimePath(),
+            $appPath ?? config('server.app_path', config('app.app_path', Path::appPath())),
+            $publicPath ?? config('server.public_path', config('app.public_path', Path::publicPath())),
+            $runtimePath ?? config('server.runtime_path', config('app.runtime_path', Path::runtimePath())),
         );
     }
 
@@ -175,7 +175,7 @@ class App
      * @return null
      * @throws Throwable
      */
-    public function onMessage(mixed $connection, mixed $request): null
+    public function onMessage(mixed $connection, mixed $request)
     {
         try {
             // Устанавливаем контекст для соединения и запроса
