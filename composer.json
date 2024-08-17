@@ -27,7 +27,10 @@
       "Triangle\\Exception\\": "src/Exception",
       "support\\": "src/Support/",
       "Support\\": "src/Support/"
-    }
+    },
+    "files": [
+      "src/functions.php"
+    ]
   },
   "require": {
     "php": ">=8.0",
