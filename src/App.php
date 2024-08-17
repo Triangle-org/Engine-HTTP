@@ -135,11 +135,11 @@ class App
         static::$logger = $logger;
 
         new Path(
-            $basePath ?? Path::basePath(),
-            $configPath ?? Path::configPath(),
-            $appPath ?? config('server.app_path', config('app.app_path', Path::appPath())),
-            $publicPath ?? config('server.public_path', config('app.public_path', Path::publicPath())),
-            $runtimePath ?? config('server.runtime_path', config('app.runtime_path', Path::runtimePath())),
+            basePath: $basePath ?? Path::basePath(),
+            configPath: $configPath ?? Path::configPath(),
+            appPath: $appPath ?? config('server.app_path', config('app.app_path', Path::appPath())),
+            publicPath: $publicPath ?? config('server.public_path', config('app.public_path', Path::publicPath())),
+            runtimePath: $runtimePath ?? config('server.runtime_path', config('app.runtime_path', Path::runtimePath())),
         );
     }
 
