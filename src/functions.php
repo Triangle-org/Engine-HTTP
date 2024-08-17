@@ -26,9 +26,9 @@
 
 use localzet\Server;
 use localzet\Server\Connection\TcpConnection;
-use support\Request;
-use support\Response;
 use Triangle\Http\App;
+use Triangle\Http\Request;
+use Triangle\Http\Response;
 
 /** RESPONSE HELPERS */
 
@@ -38,10 +38,10 @@ use Triangle\Http\App;
  * @param array $headers
  * @param bool $http_status
  * @param bool $onlyJson
- * @return Response
+ * @return Response | support\Response
  * @throws Throwable
  */
-function response(mixed $body = '', int $status = 200, array $headers = [], bool $http_status = false, bool $onlyJson = false): Response
+function response(mixed $body = '', int $status = 200, array $headers = [], bool $http_status = false, bool $onlyJson = false): Response|support\Response
 {
     $status = ($http_status === true) ? $status : 200;
     $body = [
@@ -63,9 +63,9 @@ function response(mixed $body = '', int $status = 200, array $headers = [], bool
 /**
  * @param string $blob
  * @param string $type
- * @return Response
+ * @return Response| support\Response
  */
-function responseBlob(string $blob, string $type = 'image/png'): Response
+function responseBlob(string $blob, string $type = 'image/png'): Response|support\Response
 {
     return new Response(200, ['Content-Type' => $type], $blob);
 }
@@ -75,9 +75,9 @@ function responseBlob(string $blob, string $type = 'image/png'): Response
  * @param int $status
  * @param array $headers
  * @param int $options
- * @return Response
+ * @return Response| support\Response
  */
-function responseJson($data, int $status = 200, array $headers = [], int $options = JSON_NUMERIC_CHECK | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR): Response
+function responseJson($data, int $status = 200, array $headers = [], int $options = JSON_NUMERIC_CHECK | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR): Response|support\Response
 {
     return new Response($status, ['Content-Type' => 'application/json'] + $headers, json($data, $options));
 }
@@ -86,9 +86,9 @@ function responseJson($data, int $status = 200, array $headers = [], int $option
  * @param string $location
  * @param int $status
  * @param array $headers
- * @return Response
+ * @return Response| support\Response
  */
-function redirect(string $location, int $status = 302, array $headers = []): Response
+function redirect(string $location, int $status = 302, array $headers = []): Response|support\Response
 {
     $response = new Response($status, ['Location' => $location]);
     if (!empty($headers)) {
@@ -100,10 +100,10 @@ function redirect(string $location, int $status = 302, array $headers = []): Res
 /**
  * 404 not found
  *
- * @return Response
+ * @return Response| support\Response
  * @throws Throwable
  */
-function not_found(): Response
+function not_found(): Response|support\Response
 {
     return response('Ничего не найдено', 404);
 }
@@ -112,9 +112,9 @@ if (!function_exists('jsonp')) {
     /**
      * @param $data
      * @param string $callbackName
-     * @return Response
+     * @return Response| support\Response
      */
-    function jsonp($data, string $callbackName = 'callback'): Response
+    function jsonp($data, string $callbackName = 'callback'): Response|support\Response
     {
         if (!is_scalar($data) && null !== $data) {
             $data = json_encode($data);
@@ -132,9 +132,9 @@ function connection(): ?TcpConnection
 }
 
 /**
- * @return Request|null
+ * @return Request|support\Request|null
  */
-function request(): Request|null
+function request(): Request|support\Request|null
 {
     return App::request();
 }
