@@ -126,8 +126,8 @@ class ExceptionHandler implements ExceptionHandlerInterface
             $json['traces'] = nl2br((string)$exception);
         }
 
-        if ($request->expectsJson()) return responseJson($json);
+        if ($request->expectsJson()) return \responseJson($json);
 
-        return response($json, 500);
+        return \response($json, 500);
     }
 }
