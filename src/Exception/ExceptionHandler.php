@@ -32,6 +32,7 @@ use Triangle\Http\Request;
 use Triangle\Http\Response;
 use function nl2br;
 use function responseJson;
+use function request;
 
 /**
  * Class Events
