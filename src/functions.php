@@ -26,37 +26,37 @@
 
 use localzet\Server;
 use localzet\Server\Connection\TcpConnection;
-use support\Request;
-use support\Response;
 use Triangle\Http\App;
+use Triangle\Http\Request;
+use Triangle\Http\Response;
 
-/** RESPONSE HELPERS */
+if (!function_exists('response')) {
+    /**
+     * @param mixed $body
+     * @param int $status
+     * @param array $headers
+     * @param bool $http_status
+     * @param bool $onlyJson
+     * @return Response
+     * @throws Throwable
+     */
+    function response(mixed $body = '', int $status = 200, array $headers = [], bool $http_status = false, bool $onlyJson = false): Response
+    {
+        $status = ($http_status === true) ? $status : 200;
+        $body = [
+            'status' => $status,
+            'data' => $body
+        ];
 
-/**
- * @param mixed $body
- * @param int $status
- * @param array $headers
- * @param bool $http_status
- * @param bool $onlyJson
- * @return Response
- * @throws Throwable
- */
-function response(mixed $body = '', int $status = 200, array $headers = [], bool $http_status = false, bool $onlyJson = false): Response
-{
-    $status = ($http_status === true) ? $status : 200;
-    $body = [
-        'status' => $status,
-        'data' => $body
-    ];
+        if (config('app.debug')) {
+            $body['debug'] = config('app.debug');
+        }
 
-    if (config('app.debug')) {
-        $body['debug'] = config('app.debug');
-    }
-
-    if (!function_exists('responseView') || request()->expectsJson() || $onlyJson) {
-        return responseJson($body, $status, $headers);
-    } else {
-        return responseView($body, $status, $headers);
+        if (!function_exists('responseView') || request()->expectsJson() || $onlyJson) {
+            return responseJson($body, $status, $headers);
+        } else {
+            return responseView($body, $status, $headers);
+        }
     }
 }
 
@@ -97,15 +97,15 @@ function redirect(string $location, int $status = 302, array $headers = []): Res
     return $response;
 }
 
-/**
- * 404 not found
- *
- * @return Response
- * @throws Throwable
- */
-function not_found(): Response
-{
-    return response('Ничего не найдено', 404);
+if (!function_exists('not_found')) {
+    /**
+     * @return Response
+     * @throws Throwable
+     */
+    function not_found(): Response
+    {
+        return response('Ничего не найдено', 404);
+    }
 }
 
 if (!function_exists('jsonp')) {
@@ -123,26 +123,32 @@ if (!function_exists('jsonp')) {
     }
 }
 
-/**
- * @return TcpConnection|null
- */
-function connection(): ?TcpConnection
-{
-    return App::connection();
+if (!function_exists('connection')) {
+    /**
+     * @return TcpConnection|null
+     */
+    function connection(): ?TcpConnection
+    {
+        return App::connection();
+    }
 }
 
-/**
- * @return \Triangle\Http\Request|Request
- */
-function request(): \Triangle\Http\Request|Request
-{
-    return App::request();
+if (!function_exists('request')) {
+    /**
+     * @return Request
+     */
+    function request(): Request
+    {
+        return App::request();
+    }
 }
 
-/**
- * @return Server|null
- */
-function server(): ?Server
-{
-    return App::server();
+if (!function_exists('server')) {
+    /**
+     * @return Server|null
+     */
+    function server(): ?Server
+    {
+        return App::server();
+    }
 }
