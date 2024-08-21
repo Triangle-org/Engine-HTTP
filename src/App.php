@@ -547,7 +547,6 @@ class App
         return $callback;
     }
 
-
     /**
      * @param string $plugin
      * @return ContainerInterface|array|null
