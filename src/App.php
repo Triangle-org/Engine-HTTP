@@ -47,6 +47,7 @@ use Triangle\Engine\Autoload;
 use Triangle\Engine\Config;
 use Triangle\Engine\Context;
 use Triangle\Engine\Path;
+use Triangle\Engine\Plugin;
 use Triangle\Exception\ExceptionHandler;
 use Triangle\Exception\ExceptionHandlerInterface;
 use Triangle\Middleware\Bootstrap as Middleware;
@@ -211,7 +212,7 @@ class App
             $controllerAndAction = static::parseControllerAction($path);
 
             // Получаем плагин по пути или из контроллера и действия
-            $plugin = $controllerAndAction['plugin'] ?? static::getPluginByPath($path);
+            $plugin = $controllerAndAction['plugin'] ?? Plugin::app_by_path($path);
 
             // Если контроллер и действие не найдены или маршрут по умолчанию отключен
             if (!$controllerAndAction || Router::hasDisableDefaultRoute($plugin)) {
@@ -332,13 +333,12 @@ class App
 
         // Разбиваем путь на части
         $pathExplodes = explode('/', trim($path, '/'));
-        $plugin = '';
+        $plugin = $pathExplodes[1] ?? '';
 
         // Если путь указывает на плагин
-        if (isset($pathExplodes[1]) && $pathExplodes[0] === 'app') {
-            $publicDir = static::config($plugin, 'app.public_path') ?: Path::basePath("plugin/$pathExplodes[1]/public");
-            $plugin = $pathExplodes[1];
-            $path = substr($path, strlen("/app/$pathExplodes[1]/"));
+        if (isset($pathExplodes[1]) && $pathExplodes[0] === config('app.plugin_uri', 'app')) {
+            $publicDir = static::config($plugin, 'app.public_path') ?: Path::basePath(config('app.plugin_alias', 'plugin') . "/$plugin/public");
+            $path = substr($path, strlen("/" . config('app.plugin_uri', 'app') . "/$plugin/"));
         } else {
             // Иначе используем общедоступную директорию
             $publicDir = Path::publicPath();
@@ -402,7 +402,7 @@ class App
      */
     protected static function config(string $plugin, string $key, $default = null): mixed
     {
-        return Config::get($plugin ? "plugin.$plugin.$key" : $key, $default);
+        return Config::get($plugin ? config('app.plugin_alias', 'plugin') . ".$plugin.$key" : $key, $default);
     }
 
     /**
@@ -438,7 +438,7 @@ class App
     /**
      * Функция для получения обратного вызова.
      *
-     * @param string $plugin Плагин.
+     * @param string|null $plugin Плагин.
      * @param string $app Приложение.
      * @param mixed $call Вызов.
      * @param array|null $args Аргументы.
@@ -449,10 +449,12 @@ class App
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
      */
-    protected static function getCallback(string $plugin, string $app, mixed $call, array $args = null, bool $withGlobalMiddleware = true, RouteObject $route = null): callable|Closure
+    protected static function getCallback(?string $plugin, string $app, mixed $call, array $args = null, bool $withGlobalMiddleware = true, RouteObject $route = null): callable|Closure
     {
         $args = $args === null ? null : array_values($args);
         $middlewares = [];
+        $plugin ??= '';
+
         // Если есть маршрут, получаем промежуточное ПО маршрута
         if ($route) {
             $routeMiddlewares = $route->getMiddleware();
@@ -472,7 +474,7 @@ class App
                 $middleware = call_user_func($middleware, static::container($plugin));
             }
             if (!$middleware instanceof MiddlewareInterface) {
-                throw new InvalidArgumentException('Not support middleware type');
+                throw new InvalidArgumentException('Неподдерживаемый тип middleware');
             }
             $middlewares[$key][0] = $middleware;
         }
@@ -688,10 +690,11 @@ class App
      */
     protected static function exceptionResponse(Throwable $e, mixed $request): Response
     {
+        // Получаем приложение и плагин из запроса
+        $app = $request->app ?: '';
+        $plugin = $request->plugin ?: '';
+
         try {
-            // Получаем приложение и плагин из запроса
-            $app = $request->app ?: '';
-            $plugin = $request->plugin ?: '';
             // Получаем конфигурацию исключений
             $exceptionConfig = static::config($plugin, 'exception');
             // Получаем класс обработчика исключений по умолчанию
@@ -776,12 +779,12 @@ class App
             // Если обратный вызов - это массив
             if (is_array($callback)) {
                 $controller = $callback[0];
-                $plugin = static::getPluginByClass($controller);
+                $plugin = Plugin::app_by_class($controller);
                 $app = static::getAppByController($controller);
                 $action = static::getRealMethod($controller, $callback[1]) ?? '';
             } else {
                 // Иначе получаем плагин по пути
-                $plugin = static::getPluginByPath($path);
+                $plugin = Plugin::app_by_path($path);
             }
             // Получаем обратный вызов
             $callback = static::getCallback($plugin, $app, $callback, $args, true, $route);
@@ -799,27 +802,13 @@ class App
 
     /**
      * @param string $controllerClass
-     * @return string
-     */
-    public static function getPluginByClass(string $controllerClass): string
-    {
-        $controllerClass = trim($controllerClass, '\\');
-        $tmp = explode('\\', $controllerClass, 3);
-        if ($tmp[0] !== 'plugin') {
-            return '';
-        }
-        return $tmp[1] ?? '';
-    }
-
-    /**
-     * @param string $controllerClass
      * @return mixed|string
      */
     protected static function getAppByController(string $controllerClass): mixed
     {
         $controllerClass = trim($controllerClass, '\\');
         $tmp = explode('\\', $controllerClass, 5);
-        $pos = $tmp[0] === 'plugin' ? 3 : 1;
+        $pos = $tmp[0] === config('app.plugin_alias', 'plugin') ? 3 : 1;
         if (!isset($tmp[$pos])) {
             return '';
         }
@@ -845,26 +834,6 @@ class App
     }
 
     /**
-     * Функция для получения плагина по пути.
-     *
-     * @param string $path Путь.
-     * @return string Возвращает имя плагина, если он найден, иначе возвращает пустую строку.
-     */
-    public static function getPluginByPath(string $path): string
-    {
-        // Удаляем слэши с начала и конца пути
-        $path = trim($path, '/');
-        // Разбиваем путь на части
-        $tmp = explode('/', $path, 3);
-        // Если первая часть пути не равна 'app', возвращаем пустую строку
-        if ($tmp[0] !== 'app') {
-            return '';
-        }
-        // Возвращаем вторую часть пути (имя плагина) или пустую строку, если она не существует
-        return $tmp[1] ?? '';
-    }
-
-    /**
      * Функция для разбора контроллера и действия из пути.
      *
      * @param string $path Путь.
@@ -881,19 +850,15 @@ class App
             return $cache[$path];
         }
 
-        // Разбиваем путь на части
-        $pathExplode = explode('/', trim($path, '/'));
-
         // Проверяем, является ли путь плагином
-        $isPlugin = isset($pathExplode[1]) && $pathExplode[0] === 'app';
-
-        // Получаем префиксы для конфигурации, пути и класса
-        $configPrefix = $isPlugin ? "plugin.$pathExplode[1]." : '';
-        $pathPrefix = $isPlugin ? "/app/$pathExplode[1]" : '';
-        $classPrefix = $isPlugin ? "plugin\\$pathExplode[1]" : '';
+        $plugin = Plugin::app_by_path($path);
 
         // Получаем суффикс контроллера из конфигурации
-        $suffix = Config::get("{$configPrefix}app.controller_suffix", '');
+        $suffix = static::config($plugin, 'app.controller_suffix', '');
+
+        // Получаем префиксы для конфигурации, пути и класса
+        $pathPrefix = $plugin ? "/" . config('app.plugin_uri', 'app') . "/$plugin" : '';
+        $classPrefix = $plugin ? config('app.plugin_alias', 'plugin') . "\\$plugin" : '';
 
         // Получаем относительный путь
         $relativePath = trim(substr($path, strlen($pathPrefix)), '/');
@@ -984,7 +949,7 @@ class App
         // Если класс контроллера и действие найдены, возвращаем информацию о них
         if (($controllerClass = static::getController($controllerClass)) && ($action = static::getAction($controllerClass, $action))) {
             return [
-                'plugin' => static::getPluginByClass($controllerClass),
+                'plugin' => Plugin::app_by_class($controllerClass),
                 'app' => static::getAppByController($controllerClass),
                 'controller' => $controllerClass,
                 'action' => $action
@@ -1011,7 +976,7 @@ class App
 
         // Разбиваем полное имя класса на части
         $explodes = explode('\\', strtolower(ltrim($controllerClass, '\\')));
-        $basePath = $explodes[0] === 'plugin' ? Path::basePath('plugin') : app_path();
+        $basePath = $explodes[0] === config('app.plugin_alias', 'plugin') ? Path::basePath(config('app.plugin_alias', 'plugin')) : app_path();
         unset($explodes[0]);
         $fileName = array_pop($explodes) . '.php';
         $found = true;
