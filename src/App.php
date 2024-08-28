@@ -297,13 +297,13 @@ class App
     }
 
     /**
-     * @param string $plugin
+     * @param string|null $plugin
      * @return Closure
      */
-    protected static function getFallback(string $plugin = ''): Closure
+    protected static function getFallback(?string $plugin = ''): Closure
     {
         // when route, controller and action not found, try to use Router::fallback
-        return Router::getFallback($plugin) ?: function () {
+        return Router::getFallback($plugin ?? '') ?: function () {
             return not_found();
         };
     }
@@ -395,12 +395,12 @@ class App
 
     /**
      * Конфигурация
-     * @param string $plugin
+     * @param string|null $plugin
      * @param string $key
-     * @param $default
+     * @param null $default
      * @return array|mixed|null
      */
-    protected static function config(string $plugin, string $key, $default = null): mixed
+    protected static function config(?string $plugin, string $key, $default = null): mixed
     {
         return Config::get($plugin ? config('app.plugin_alias', 'plugin') . ".$plugin.$key" : $key, $default);
     }
@@ -550,10 +550,10 @@ class App
     }
 
     /**
-     * @param string $plugin
+     * @param string|null $plugin
      * @return ContainerInterface|array|null
      */
-    public static function container(string $plugin = ''): ContainerInterface|array|null
+    public static function container(?string $plugin = ''): ContainerInterface|array|null
     {
         return static::config($plugin, 'container');
     }
@@ -619,7 +619,7 @@ class App
      * @param ReflectionFunctionAbstract $reflector Рефлектор.
      * @return array Возвращает массив с зависимыми параметрами.
      */
-    protected static function resolveMethodDependencies(string $plugin, Request $request, array $args, ReflectionFunctionAbstract $reflector): array
+    protected static function resolveMethodDependencies(?string $plugin, Request $request, array $args, ReflectionFunctionAbstract $reflector): array
     {
         // Спецификация информации о параметрах
         $args = array_values($args);
@@ -667,12 +667,12 @@ class App
     }
 
     /**
-     * @param string $plugin
+     * @param string|null $plugin
      * @param array|Closure $call
      * @return Closure
      * @see Dependency injection through reflection information
      */
-    protected static function resolveInject(string $plugin, array|Closure $call): Closure
+    protected static function resolveInject(?string $plugin, array|Closure $call): Closure
     {
         return function (Request $request, ...$args) use ($plugin, $call) {
             $reflector = static::getReflector($call);
