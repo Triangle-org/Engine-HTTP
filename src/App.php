@@ -333,10 +333,11 @@ class App
 
         // Разбиваем путь на части
         $pathExplodes = explode('/', trim($path, '/'));
-        $plugin = $pathExplodes[1] ?? '';
+        $plugin = '';
 
         // Если путь указывает на плагин
         if (isset($pathExplodes[1]) && $pathExplodes[0] === config('app.plugin_uri', 'app')) {
+            $plugin = $pathExplodes[1];
             $publicDir = static::config($plugin, 'app.public_path') ?: Path::basePath(config('app.plugin_alias', 'plugin') . "/$plugin/public");
             $path = substr($path, strlen("/" . config('app.plugin_uri', 'app') . "/$plugin/"));
         } else {
