@@ -321,9 +321,13 @@ class App
      */
     protected static function getFallback(?string $plugin = '', int $status = 404): Closure
     {
-        return Router::getFallback($plugin ?? '') ?: function () {
-            return not_found();
-        };
+        $fallback = Router::getFallback($plugin ?? '', $status);
+        if (!$fallback) {
+            Router::fallback(fn() => not_found(), $plugin);
+            $fallback = Router::getFallback($plugin ?? '', $status);
+        }
+
+        return $fallback;
     }
 
     /**
