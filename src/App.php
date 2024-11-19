@@ -306,9 +306,9 @@ class App
             str_contains($path, "\\") ||
             str_contains($path, "\0")
         ) {
-            $callback = static::getFallback(status: 400);
+            $callback = static::getFallback(status: 422);
             $request->plugin = $request->app = $request->controller = $request->action = '';
-            static::send($connection, $callback($request, 400), $request);
+            static::send($connection, $callback($request, 422), $request);
             return true;
         }
         return false;
@@ -873,7 +873,8 @@ class App
             $app = $controller = $action = '';
             $args = !empty($routeInfo[2]) ? $routeInfo[2] : [];
             $route = clone $routeInfo[3];
-            // Если есть аргументы, устанавливаем их для маршрута
+
+            // Установка параметров маршрута, если они есть
             if ($args) {
                 $route->setParams($args);
             }
