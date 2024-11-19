@@ -35,8 +35,8 @@
   "require": {
     "php": "^8.0",
     "triangle/engine": ">=6.3",
-    "triangle/router": "^1.0",
-    "triangle/middleware": "^1.0"
+    "triangle/router": "^1.1",
+    "triangle/middleware": "^1.1"
   },
   "suggest": {
   }

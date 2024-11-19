@@ -40,6 +40,8 @@ use function responseView;
  */
 class BusinessException extends RuntimeException implements ExceptionInterface
 {
+    protected array $data = [];
+
     /**
      * Рендеринг исключения
      * Этот метод вызывается для отображения исключения пользователю.
@@ -52,6 +54,7 @@ class BusinessException extends RuntimeException implements ExceptionInterface
         $json = [
             'status' => $this->getCode() ?? 500,
             'error' => $this->getMessage(),
+            'data' => $this->data,
         ];
 
         if (config('app.debug')) {
@@ -62,5 +65,48 @@ class BusinessException extends RuntimeException implements ExceptionInterface
         if ($request->expectsJson()) return responseJson($json);
 
         return responseView($json, 500);
+    }
+
+    /**
+     * Установить доп. данные.
+     * @param array $data
+     * @return $this
+     */
+    public function setData(array $data): BusinessException
+    {
+        $this->data = $data;
+        return $this;
+    }
+
+    /**
+     * Получить доп. данные.
+     * @return array
+     */
+    public function getData(): array
+    {
+        return $this->data;
+    }
+
+    /**
+     * @param string $message
+     * @param array $parameters
+     * @param string|null $domain
+     * @param string|null $locale
+     * @return string
+     */
+    protected function trans(string $message, array $parameters = [], string $domain = null, string $locale = null): string
+    {
+        $args = [];
+        foreach ($parameters as $key => $parameter) {
+            $args[":$key"] = $parameter;
+        }
+        try {
+            $message = trans($message, $args, $domain, $locale);
+        } catch (Throwable $e) {
+        }
+        foreach ($parameters as $key => $value) {
+            $message = str_replace(":$key", $value, $message);
+        }
+        return $message;
     }
 }

@@ -29,6 +29,7 @@ namespace Triangle\Http;
 use Closure;
 use ErrorException;
 use Exception;
+use Illuminate\Database\Eloquent\Model;
 use InvalidArgumentException;
 use localzet\Server;
 use localzet\Server\Connection\TcpConnection;
@@ -42,6 +43,7 @@ use ReflectionException;
 use ReflectionFunction;
 use ReflectionFunctionAbstract;
 use ReflectionMethod;
+use think\Model as ThinkModel;
 use Throwable;
 use Triangle\Engine\Autoload;
 use Triangle\Engine\Config;
@@ -50,6 +52,8 @@ use Triangle\Engine\Path;
 use Triangle\Engine\Plugin;
 use Triangle\Exception\ExceptionHandler;
 use Triangle\Exception\ExceptionHandlerInterface;
+use Triangle\Exception\InputTypeException;
+use Triangle\Exception\MissingInputException;
 use Triangle\Middleware\Bootstrap as Middleware;
 use Triangle\Middleware\MiddlewareInterface;
 use Triangle\Router;
@@ -74,10 +78,10 @@ use function is_a;
 use function is_array;
 use function is_dir;
 use function is_file;
+use function is_numeric;
 use function is_string;
 use function key;
 use function method_exists;
-use function next;
 use function ob_get_clean;
 use function ob_start;
 use function pathinfo;
@@ -199,11 +203,13 @@ class App
                 return null;
             }
 
+            $status = 200;
+
             // Проверяем на небезопасные URI, находим файл или маршрут
             if (
                 static::unsafeUri($connection, $path, $request) ||
                 static::findFile($connection, $path, $key, $request) ||
-                static::findRoute($connection, $path, $key, $request)
+                static::findRoute($connection, $path, $key, $request, $status)
             ) {
                 return null;
             }
@@ -215,18 +221,21 @@ class App
             $plugin = $controllerAndAction['plugin'] ?? Plugin::app_by_path($path);
 
             // Если контроллер и действие не найдены или маршрут по умолчанию отключен
-            if (!$controllerAndAction || Router::hasDisableDefaultRoute($plugin)) {
-                // Устанавливаем плагин в запросе
+            if (!$controllerAndAction
+                || Router::isDefaultRouteDisabled($plugin, $controllerAndAction['app'] ?: '*')
+                || Router::isDefaultRouteDisabled($controllerAndAction['controller'])
+                || Router::isDefaultRouteDisabled([$controllerAndAction['controller'], $controllerAndAction['action']])
+            ) { // Устанавливаем плагин в запросе
                 $request->plugin = $plugin;
 
                 // Получаем обратный вызов для отката
-                $callback = static::getFallback($plugin);
+                $callback = static::getFallback($plugin, $status);
 
                 // Устанавливаем приложение, контроллер и действие в запросе
                 $request->app = $request->controller = $request->action = '';
 
                 // Отправляем обратный вызов
-                static::send($connection, $callback($request), $request);
+                static::send($connection, $callback($request, $status), $request);
                 return null;
             }
 
@@ -264,8 +273,15 @@ class App
     {
         $keepAlive = $request->header('connection');
         Context::destroy();
-        if (($keepAlive === null && $request->protocolVersion() === '1.1')
+        if ((
+                $keepAlive === null
+                && $request->protocolVersion() === '1.1'
+            )
             || $keepAlive === 'keep-alive' || $keepAlive === 'Keep-Alive'
+            || (
+                is_a($response, Response::class)
+                && $response->getHeader('Transfer-Encoding') === 'chunked'
+            )
         ) {
             $connection->send($response);
             return;
@@ -284,13 +300,15 @@ class App
     {
         if (
             !$path ||
-            str_contains($path, '..') ||
+            $path[0] !== '/' ||
+            str_contains($path, '/../') ||
+            str_ends_with($path, '/..') ||
             str_contains($path, "\\") ||
             str_contains($path, "\0")
         ) {
-            $callback = static::getFallback();
+            $callback = static::getFallback(status: 400);
             $request->plugin = $request->app = $request->controller = $request->action = '';
-            static::send($connection, $callback($request), $request);
+            static::send($connection, $callback($request, 400), $request);
             return true;
         }
         return false;
@@ -298,11 +316,11 @@ class App
 
     /**
      * @param string|null $plugin
+     * @param int $status
      * @return Closure
      */
-    protected static function getFallback(?string $plugin = ''): Closure
+    protected static function getFallback(?string $plugin = '', int $status = 404): Closure
     {
-        // when route, controller and action not found, try to use Router::fallback
         return Router::getFallback($plugin ?? '') ?: function () {
             return not_found();
         };
@@ -386,7 +404,7 @@ class App
                 return $callback($request);
             }
             return (new Response())->file($file);
-        }, null, false), '', '', '', '', null]);
+        }, [], false), '', '', '', '', null]);
         // Получаем обратные вызовы
         [$callback, $request->plugin, $request->app, $request->controller, $request->action, $request->route] = static::$callbacks[$key];
         // Отправляем обратный вызов
@@ -450,9 +468,8 @@ class App
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
      */
-    protected static function getCallback(?string $plugin, string $app, mixed $call, array $args = null, bool $withGlobalMiddleware = true, RouteObject $route = null): callable|Closure
+    public static function getCallback(?string $plugin, string $app, mixed $call, array $args = [], bool $withGlobalMiddleware = true, RouteObject $route = null): callable|Closure
     {
-        $args = $args === null ? null : array_values($args);
         $middlewares = [];
         $plugin ??= '';
 
@@ -464,15 +481,17 @@ class App
             }
         }
         // Добавляем глобальное промежуточное ПО
-        $middlewares = array_merge($middlewares, Middleware::getMiddleware($plugin, $app, $withGlobalMiddleware));
+        $isController = is_array($call) && is_string($call[0]);
+        $middlewares = array_merge($middlewares, Middleware::getMiddleware($plugin, $app, $isController ? $call[0] : '', $withGlobalMiddleware));
 
         // Создаем экземпляры промежуточного ПО
+        $container = static::container($plugin) ?? static::container();
         foreach ($middlewares as $key => $item) {
             $middleware = $item[0];
             if (is_string($middleware)) {
-                $middleware = static::container($plugin)->get($middleware);
+                $middleware = $container->get($middleware);
             } elseif ($middleware instanceof Closure) {
-                $middleware = call_user_func($middleware, static::container($plugin));
+                $middleware = call_user_func($middleware, $container);
             }
             if (!$middleware instanceof MiddlewareInterface) {
                 throw new InvalidArgumentException('Неподдерживаемый тип middleware');
@@ -482,31 +501,32 @@ class App
 
         // Проверяем, нужно ли внедрять зависимости в вызов
         $needInject = static::isNeedInject($call, $args);
-        if (is_array($call) && is_string($call[0])) {
+        $anonymousArgs = array_values($args);
+        if ($isController) {
             $controllerReuse = static::config($plugin, 'app.controller_reuse', true);
             if (!$controllerReuse) {
                 if ($needInject) {
-                    $call = function ($request, ...$args) use ($call, $plugin) {
-                        $call[0] = static::container($plugin)->make($call[0]);
+                    $call = function ($request) use ($call, $plugin, $args, $container) {
+                        $call[0] = $container->make($call[0]);
                         $reflector = static::getReflector($call);
-                        $args = static::resolveMethodDependencies($plugin, $request, $args, $reflector);
+                        $args = array_values(static::resolveMethodDependencies($container, $request, array_merge($request->all(), $args), $reflector));
                         return $call(...$args);
                     };
                     $needInject = false;
                 } else {
-                    $call = function ($request, ...$args) use ($call, $plugin) {
-                        $call[0] = static::container($plugin)->make($call[0]);
-                        return $call($request, ...$args);
+                    $call = function ($request, ...$anonymousArgs) use ($call, $plugin, $container) {
+                        $call[0] = $container->make($call[0]);
+                        return $call($request, ...$anonymousArgs);
                     };
                 }
             } else {
-                $call[0] = static::container($plugin)->get($call[0]);
+                $call[0] = $container->get($call[0]);
             }
         }
 
         // Если нужно внедрить зависимости, внедряем их
         if ($needInject) {
-            $call = static::resolveInject($plugin, $call);
+            $call = static::resolveInject($plugin, $call, $args);
         }
 
         // Если есть промежуточное ПО, создаем цепочку вызовов
@@ -519,13 +539,9 @@ class App
                         return static::exceptionResponse($e, $request);
                     }
                 };
-            }, function ($request) use ($call, $args) {
+            }, function ($request) use ($call, $anonymousArgs) {
                 try {
-                    if ($args === null) {
-                        $response = $call($request);
-                    } else {
-                        $response = $call($request, ...$args);
-                    }
+                    $response = $call($request, ...$anonymousArgs);
                 } catch (Throwable $e) {
                     return static::exceptionResponse($e, $request);
                 }
@@ -539,11 +555,11 @@ class App
             });
         } else {
             // Если нет промежуточного ПО, создаем обратный вызов
-            if ($args === null) {
+            if (!$anonymousArgs) {
                 $callback = $call;
             } else {
-                $callback = function ($request) use ($call, $args) {
-                    return $call($request, ...$args);
+                $callback = function ($request) use ($call, $anonymousArgs) {
+                    return $call($request, ...$anonymousArgs);
                 };
             }
         }
@@ -562,16 +578,16 @@ class App
     /**
      * Check whether inject is required
      * @param $call
-     * @param $args
+     * @param array $args
      * @return bool
      * @throws ReflectionException
      */
-    protected static function isNeedInject($call, $args): bool
+    protected static function isNeedInject($call, array &$args): bool
     {
         if (is_array($call) && !method_exists($call[0], $call[1])) {
             return false;
         }
-        $args = $args ?: [];
+
         $reflector = static::getReflector($call);
         $reflectionParameters = $reflector->getParameters();
         if (!$reflectionParameters) {
@@ -580,20 +596,58 @@ class App
         $firstParameter = current($reflectionParameters);
         unset($reflectionParameters[key($reflectionParameters)]);
         $adaptersList = ['int', 'string', 'bool', 'array', 'object', 'float', 'mixed', 'resource'];
+        $keys = [];
+        $needInject = false;
         foreach ($reflectionParameters as $parameter) {
-            if ($parameter->hasType() && !in_array($parameter->getType()->getName(), $adaptersList)) {
-                return true;
+            $parameterName = $parameter->name;
+            $keys[] = $parameterName;
+            if ($parameter->hasType()) {
+                $typeName = $parameter->getType()->getName();
+                if (!in_array($typeName, $adaptersList)) {
+                    $needInject = true;
+                    continue;
+                }
+                if (!array_key_exists($parameterName, $args)) {
+                    $needInject = true;
+                    continue;
+                }
+                switch ($typeName) {
+                    case 'int':
+                    case 'float':
+                        if (!is_numeric($args[$parameterName])) {
+                            return true;
+                        }
+                        $args[$parameterName] = $typeName === 'int' ? (int)$args[$parameterName] : (float)$args[$parameterName];
+                        break;
+                    case 'bool':
+                        $args[$parameterName] = (bool)$args[$parameterName];
+                        break;
+                    case 'array':
+                    case 'object':
+                        if (!is_array($args[$parameterName])) {
+                            return true;
+                        }
+                        $args[$parameterName] = $typeName === 'array' ? $args[$parameterName] : (object)$args[$parameterName];
+                        break;
+                    case 'string':
+                    case 'mixed':
+                    case 'resource':
+                        break;
+                }
             }
         }
+        if (array_keys($args) !== $keys) {
+            return true;
+        }
         if (!$firstParameter->hasType()) {
-            return count($args) > count($reflectionParameters);
+            return $firstParameter->getName() !== 'request';
         }
 
-        if (!is_a(static::$requestClass, $firstParameter->getType()->getName())) {
+        if (!is_a(static::$requestClass, $firstParameter->getType()->getName(), true)) {
             return true;
         }
 
-        return false;
+        return $needInject;
     }
 
     /**
@@ -614,70 +668,106 @@ class App
     /**
      * Функция для получения зависимых параметров.
      *
-     * @param string $plugin Плагин.
+     * @param ContainerInterface $container
      * @param Request $request Запрос.
-     * @param array $args Аргументы.
+     * @param array $inputs
      * @param ReflectionFunctionAbstract $reflector Рефлектор.
      * @return array Возвращает массив с зависимыми параметрами.
+     * @throws ReflectionException
      */
-    protected static function resolveMethodDependencies(?string $plugin, Request $request, array $args, ReflectionFunctionAbstract $reflector): array
+    protected static function resolveMethodDependencies(ContainerInterface $container, Request $request, array $inputs, ReflectionFunctionAbstract $reflector): array
     {
-        // Спецификация информации о параметрах
-        $args = array_values($args);
         $parameters = [];
-        // Массив классов рефлексии для циклических параметров, каждый $parameter представляет собой объект рефлексии параметров
         foreach ($reflector->getParameters() as $parameter) {
-            // Потребление квоты параметра
-            if ($parameter->hasType()) {
-                $name = $parameter->getType()->getName();
-                switch ($name) {
-                    case 'int':
-                    case 'string':
-                    case 'bool':
-                    case 'array':
-                    case 'object':
-                    case 'float':
-                    case 'mixed':
-                    case 'resource':
-                        goto _else;
-                    default:
-                        if (is_a($request, $name)) {
-                            // Внедрение Request
-                            $parameters[] = $request;
-                        } else {
-                            $parameters[] = static::container($plugin)->make($name);
-                        }
-                        break;
-                }
-            } else {
-                _else:
-                // Переменный параметр
-                if (null !== key($args)) {
-                    $parameters[] = current($args);
+            $parameterName = $parameter->name;
+            $type = $parameter->getType();
+            $typeName = $type?->getName();
+
+            if ($typeName && is_a($request, $typeName)) {
+                $parameters[$parameterName] = $request;
+                continue;
+            }
+
+            if (!array_key_exists($parameterName, $inputs)) {
+                if (!$parameter->isDefaultValueAvailable()) {
+                    if (!$typeName || !class_exists($typeName)) {
+                        throw (new MissingInputException())->setData([
+                            'parameter' => $parameterName,
+                        ]);
+                    }
                 } else {
-                    // Указывает, имеет ли текущий параметр значение по умолчанию. Если да, возвращает true
-                    $parameters[] = $parameter->isDefaultValueAvailable() ? $parameter->getDefaultValue() : null;
+                    $parameters[$parameterName] = $parameter->getDefaultValue();
+                    continue;
                 }
-                // Потребление квоты переменных
-                next($args);
+            }
+            switch ($typeName) {
+                case 'int':
+                case 'float':
+                    if (!is_numeric($inputs[$parameterName])) {
+                        throw (new InputTypeException())->setData([
+                            'parameter' => $parameterName,
+                            'exceptType' => $typeName,
+                            'actualType' => gettype($inputs[$parameterName]),
+                        ]);
+                    }
+                    $parameters[$parameterName] = $typeName === 'float' ? (float)$inputs[$parameterName] : (int)$inputs[$parameterName];
+                    break;
+                case 'bool':
+                    $parameters[$parameterName] = (bool)$inputs[$parameterName];
+                    break;
+                case 'array':
+                case 'object':
+                    if (!is_array($inputs[$parameterName])) {
+                        throw (new InputTypeException())->setData([
+                            'parameter' => $parameterName,
+                            'exceptType' => $typeName,
+                            'actualType' => gettype($inputs[$parameterName]),
+                        ]);
+                    }
+                    $parameters[$parameterName] = $typeName === 'object' ? (object)$inputs[$parameterName] : $inputs[$parameterName];
+                    break;
+                case 'string':
+                case 'mixed':
+                case 'resource':
+                case null:
+                    $parameters[$parameterName] = $inputs[$parameterName];
+                    break;
+                default:
+                    $subInputs = isset($inputs[$parameterName]) && is_array($inputs[$parameterName]) ? $inputs[$parameterName] : [];
+                    if (
+                        (class_exists(Model::class) && is_a($typeName, Model::class, true))
+                        || (class_exists(ThinkModel::class) && is_a($typeName, ThinkModel::class, true))
+                    ) {
+                        $parameters[$parameterName] = $container->make($typeName, [
+                            'attributes' => $subInputs,
+                            'data' => $subInputs
+                        ]);
+                        break;
+                    }
+                    if (is_array($subInputs) && $constructor = (new ReflectionClass($typeName))->getConstructor()) {
+                        $parameters[$parameterName] = $container->make($typeName, static::resolveMethodDependencies($container, $request, $subInputs, $constructor));
+                    } else {
+                        $parameters[$parameterName] = $container->make($typeName);
+                    }
+                    break;
             }
         }
 
-        // Возвращает результат замены параметров
         return $parameters;
     }
 
     /**
      * @param string|null $plugin
      * @param array|Closure $call
+     * @param array|null $args
      * @return Closure
      * @see Dependency injection through reflection information
      */
-    protected static function resolveInject(?string $plugin, array|Closure $call): Closure
+    protected static function resolveInject(?string $plugin, array|Closure $call, ?array $args): Closure
     {
-        return function (Request $request, ...$args) use ($plugin, $call) {
+        return function (Request $request) use ($plugin, $call, $args) {
             $reflector = static::getReflector($call);
-            $args = static::resolveMethodDependencies($plugin, $request, $args, $reflector);
+            $args = array_values(static::resolveMethodDependencies(static::container($plugin), $request, array_merge($request->all(), $args), $reflector));
             return $call(...$args);
         };
     }
@@ -698,17 +788,25 @@ class App
         try {
             // Получаем конфигурацию исключений
             $exceptionConfig = static::config($plugin, 'exception');
+            $appExceptionConfig = static::config("", 'exception');
+
             // Получаем класс обработчика исключений по умолчанию
-            $defaultException = $exceptionConfig[''] ?? ExceptionHandler::class;
+            if (!isset($exceptionConfig['']) && isset($appExceptionConfig['@'])) {
+                $defaultException = $appExceptionConfig['@'] ?? ExceptionHandler::class;
+            } else {
+                $defaultException = $exceptionConfig[''] ?? ExceptionHandler::class;
+            }
+
             // Получаем класс обработчика исключений для приложения
             $exceptionHandlerClass = $exceptionConfig[$app] ?? $defaultException;
 
             // Создаем экземпляр обработчика исключений
             /** @var ExceptionHandlerInterface $exceptionHandler */
-            $exceptionHandler = static::container($plugin)->make($exceptionHandlerClass, [
-                'logger' => static::$logger,
-                'debug' => static::config($plugin, 'app.debug')
-            ]);
+            $exceptionHandler = (static::container($plugin) ?? static::container(''))
+                ->make($exceptionHandlerClass, [
+                    'logger' => static::$logger,
+                    'debug' => static::config($plugin, 'app.debug')
+                ]);
             // Отправляем отчет об исключении
             $exceptionHandler->report($e);
             // Создаем ответ на исключение
@@ -717,7 +815,7 @@ class App
             return $response;
         } catch (Throwable $e) {
             // Если возникло исключение при обработке исключения, создаем ответ с кодом 500
-            $response = new Response(500, [], static::config($plugin ?? '', 'app.debug') ? (string)$e : $e->getMessage());
+            $response = new Response(500, [], static::config($plugin ?? '', 'app.debug', true) ? (string)$e : $e->getMessage());
             $response->exception($e);
             return $response;
         }
@@ -753,13 +851,14 @@ class App
      * @param string $path Путь.
      * @param string $key Ключ.
      * @param mixed $request Запрос.
+     * @param int $status Статус.
      * @return bool Возвращает true, если маршрут найден, иначе возвращает false.
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
      * @throws Throwable
      */
-    protected static function findRoute(TcpConnection $connection, string $path, string $key, mixed $request): bool
+    protected static function findRoute(TcpConnection $connection, string $path, string $key, mixed $request, int &$status = 200): bool
     {
         // Получаем информацию о маршруте
         $routeInfo = Router::dispatch($request->method(), $path);
@@ -768,10 +867,11 @@ class App
         }
         // Если маршрут найден
         if ($routeInfo[0] === Dispatcher::FOUND) {
+            $status = 200;
             $routeInfo[0] = 'route';
             $callback = $routeInfo[1];
             $app = $controller = $action = '';
-            $args = !empty($routeInfo[2]) ? $routeInfo[2] : null;
+            $args = !empty($routeInfo[2]) ? $routeInfo[2] : [];
             $route = clone $routeInfo[3];
             // Если есть аргументы, устанавливаем их для маршрута
             if ($args) {
@@ -797,6 +897,7 @@ class App
             static::send($connection, $callback($request), $request);
             return true;
         }
+        $status = $routeInfo[0] === Dispatcher::METHOD_NOT_ALLOWED ? 405 : 404;
         // Если маршрут не найден, возвращаем false
         return false;
     }
@@ -1069,6 +1170,7 @@ class App
     {
         static::$server = $server;
         Http::requestClass(static::$requestClass);
+        Context::init();
         Autoload::loadAll($server);
     }
 }

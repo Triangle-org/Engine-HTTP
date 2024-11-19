@@ -101,24 +101,13 @@ class Request extends \localzet\Server\Protocols\Http\Request
      */
     public function getRequestIp(): ?string
     {
-        $ip = $this->header(
-            'x-real-ip',
-            $this->header(
-                'x-forwarded-for',
-                $this->header(
-                    'client-ip',
-                    $this->header(
-                        'x-client-ip',
-                        $this->header(
-                            'remote-addr',
-                            $this->header(
-                                'via'
-                            )
-                        )
-                    )
-                )
-            )
-        );
+        $ip = $this->header('x-forwarded-for')
+            ?? $this->header('x-real-ip')
+            ?? $this->header('client-ip')
+            ?? $this->header('x-client-ip')
+            ?? $this->header('remote-addr')
+            ?? $this->header('via');
+
         if (is_string($ip)) {
             $ip = current(explode(',', $ip));
         }

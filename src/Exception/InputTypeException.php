@@ -1,4 +1,4 @@
-<?php declare(strict_types=1);
+<?php
 
 /**
  * @package     Triangle HTTP Component
@@ -27,35 +27,20 @@
 namespace Triangle\Exception;
 
 use Throwable;
-use Triangle\Http\Request;
-use Triangle\Http\Response;
 
-class MissingInputException extends PageNotFoundException implements ExceptionInterface
+class InputTypeException extends PageNotFoundException
 {
+    /**
+     * @param string $message
+     * @param int $code
+     * @param Throwable|null $previous
+     */
     public function __construct(
-        string    $message = 'Missing input parameter :parameter',
+        string    $message = 'Input :parameter must be of type :exceptType, :actualType given',
         int       $code = 400,
         Throwable $previous = null
     )
     {
         parent::__construct($message, $code, $previous);
-    }
-
-    public function render(Request $request): ?Response
-    {
-        $json = [
-            'status' => $this->getCode() ?? 404,
-            'error' => $this->trans($this->getMessage(), $this->data),
-            'data' => config('app.debug') ? $this->data : ['parameter' => ''],
-        ];
-
-        if (config('app.debug')) {
-            $json['debug'] = config('app.debug');
-            $json['traces'] = nl2br((string)$this);
-        }
-
-        if ($request->expectsJson()) return responseJson($json);
-
-        return responseView($json, 500);
     }
 }

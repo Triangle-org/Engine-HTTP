@@ -1,4 +1,4 @@
-<?php declare(strict_types=1);
+<?php
 
 /**
  * @package     Triangle HTTP Component
@@ -30,11 +30,16 @@ use Throwable;
 use Triangle\Http\Request;
 use Triangle\Http\Response;
 
-class MissingInputException extends PageNotFoundException implements ExceptionInterface
+class PageNotFoundException extends NotFoundException
 {
+    /**
+     * @param string $message
+     * @param int $code
+     * @param Throwable|null $previous
+     */
     public function __construct(
-        string    $message = 'Missing input parameter :parameter',
-        int       $code = 400,
+        string    $message = '404 Not Found',
+        int       $code = 404,
         Throwable $previous = null
     )
     {
@@ -46,7 +51,7 @@ class MissingInputException extends PageNotFoundException implements ExceptionIn
         $json = [
             'status' => $this->getCode() ?? 404,
             'error' => $this->trans($this->getMessage(), $this->data),
-            'data' => config('app.debug') ? $this->data : ['parameter' => ''],
+            'data' => $this->data,
         ];
 
         if (config('app.debug')) {
