@@ -24,13 +24,15 @@
  *              For any questions, please contact <triangle@localzet.com>
  */
 
-namespace support;
+namespace Triangle;
 
-/**
- * @link https://www.php-fig.org/psr/psr-7/
- */
+use Triangle\Router\RouteObject;
+
 #[\AllowDynamicProperties]
-class Request extends \Triangle\Http\Request
+class Request extends Engine\Request
 {
+    /**
+     * @var RouteObject|null $route Маршрут, связанный с запросом.
+     */
+    public ?RouteObject $route = null;
 }
-

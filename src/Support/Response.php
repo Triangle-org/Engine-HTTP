@@ -24,12 +24,21 @@
  *              For any questions, please contact <triangle@localzet.com>
  */
 
-namespace support;
+namespace Triangle;
+
+use Throwable;
+use function filemtime;
+use function gmdate;
+
 
 /**
- * @link https://www.php-fig.org/psr/psr-7/
+ * Класс Response
+ * Этот класс представляет собой пользовательский ответ, который наследует от базового класса Http\Response.
+ *
+ * @link https://www.php-fig.org/psr/psr-7
+ * @link https://www.php.net/manual/en/class.httpresponse.php
  */
 #[\AllowDynamicProperties]
-class Response extends \Triangle\Http\Response
+class Response extends Engine\Response
 {
 }
