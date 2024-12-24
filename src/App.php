@@ -379,7 +379,7 @@ class App extends \Triangle\Engine\App
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
      */
-    protected static function findRoute(TcpConnection $connection, string $path, string $key, mixed $request, int &$status = 200): null|callable|Closure
+    protected static function findRoute(TcpConnection $connection, string $path, string $key, mixed $request, int &$status = 200): null|false|array
     {
         $middlewares = [];
         $routeInfo = Router::dispatch($request->method(), $path);
