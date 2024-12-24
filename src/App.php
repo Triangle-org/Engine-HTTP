@@ -60,8 +60,8 @@ use Triangle\Middleware\MiddlewareInterface;
 use Triangle\Router;
 use Triangle\Router\Dispatcher;
 use Triangle\Router\RouteObject;
-use Triangle\support\Request;
-use Triangle\support\Response;
+use Triangle\Request;
+use Triangle\Response;
 use function array_merge;
 use function array_pop;
 use function array_reduce;
@@ -97,7 +97,7 @@ use function trim;
 /**
  * Class App
  */
-class App extends ServerAbstract
+class App extends \Triangle\Engine\App
 {
     /**
      * Функция для обработки сообщений.
@@ -109,83 +109,57 @@ class App extends ServerAbstract
     public function onMessage(ConnectionInterface &$connection, mixed $request): void
     {
         try {
-            // Устанавливаем контекст для соединения и запроса
             Context::set(TcpConnection::class, $connection);
             Context::set(Request::class, $request);
 
-            // Получаем путь из запроса
             $path = $request->path();
-
-            // Создаем ключ из метода запроса и пути
             $key = $request->method() . $path;
 
-            // Если для данного ключа уже есть обратные вызовы
             if (isset(static::$callbacks[$key])) {
-                // Получаем обратные вызовы
                 $callback = static::getCallbacks($key, $request);
-
-                // Отправляем обратный вызов
                 static::send($connection, $callback($request), $request);
                 return;
             }
 
             $status = 200;
 
-            // Проверяем на небезопасные URI, находим файл или маршрут
             if (static::unsafeUri($path)) {
                 $callback = static::getFallback(status: 422);
                 $request->plugin = $request->app = $request->controller = $request->action = '';
                 static::send($connection, $callback($request, 422), $request);
                 return;
-            } else if (static::findFile($connection, $path, $key, $request)) return;
-            else if ($callback = static::findRoute($connection, $path, $key, $request, $status)) {
+            } else if (static::findFile($connection, $path, $key, $request)) {
+                return;
+            } else if ($callback = static::findRoute($connection, $path, $key, $request, $status)) {
                 static::send($connection, $callback($request), $request);
                 return;
             }
 
-            // Парсим контроллер и действие из пути
             $controllerAndAction = static::parseControllerAction($path);
-
-            // Получаем плагин по пути или из контроллера и действия
             $plugin = $controllerAndAction['plugin'] ?? Plugin::app_by_path($path);
 
-            // Если контроллер и действие не найдены или маршрут по умолчанию отключен
             if (!$controllerAndAction
                 || Router::isDefaultRouteDisabled($plugin, $controllerAndAction['app'] ?: '*')
                 || Router::isDefaultRouteDisabled($controllerAndAction['controller'])
                 || Router::isDefaultRouteDisabled([$controllerAndAction['controller'], $controllerAndAction['action']])
-            ) { // Устанавливаем плагин в запросе
+            ) {
                 $request->plugin = $plugin;
-
-                // Получаем обратный вызов для отката
                 $callback = static::getFallback($plugin, $status);
-
-                // Устанавливаем приложение, контроллер и действие в запросе
                 $request->app = $request->controller = $request->action = '';
-
-                // Отправляем обратный вызов
                 static::send($connection, $callback($request, $status), $request);
                 return;
             }
 
-            // Получаем приложение, контроллер и действие
             $app = $controllerAndAction['app'];
             $controller = $controllerAndAction['controller'];
             $action = $controllerAndAction['action'];
 
-            // Получаем обратный вызов
             $callback = static::getCallback($plugin, $app, [$controller, $action]);
-
-            // Собираем обратные вызовы
             static::collectCallbacks($key, [$callback, $plugin, $app, $controller, $action, null]);
 
-            // Получаем обратные вызовы
             $callback = static::getCallbacks($key, $request);
-
-            // Отправляем обратный вызов
             static::send($connection, $callback($request), $request);
         } catch (Throwable $e) {
-            // Если возникло исключение, отправляем ответ на исключение
             static::send($connection, static::exceptionResponse($e, $request), $request);
         }
     }
@@ -198,10 +172,12 @@ class App extends ServerAbstract
      * @param mixed $call Вызов.
      * @param array $args Аргументы.
      * @param bool $withGlobalMiddleware Использовать глобальное промежуточное ПО.
-     * @param array|null $middlewares
      * @return callable|Closure Возвращает обратный вызов.
+     * @throws ReflectionException
+     * @throws NotFoundExceptionInterface
+     * @throws ContainerExceptionInterface
      */
-    public static function getCallback(string $plugin, string $app, $call, array $args = [], bool $withGlobalMiddleware = true, ?array $middlewares = [])
+    public static function getCallback(string $plugin, string $app, $call, array $args = [], bool $withGlobalMiddleware = true, ?array $middlewares = []): callable|Closure
     {
         $plugin ??= '';
         $isController = is_array($call) && is_string($call[0]);
@@ -211,7 +187,6 @@ class App extends ServerAbstract
             Middleware::getMiddleware($plugin, $app, $isController ? $call[0] : '', $withGlobalMiddleware)
         );
 
-        // Создаем экземпляры промежуточного ПО
         foreach ($middlewares as $key => $item) {
             $middleware = $item[0];
             if (is_string($middleware)) {
@@ -225,7 +200,6 @@ class App extends ServerAbstract
             $middlewares[$key][0] = $middleware;
         }
 
-        // Проверяем, нужно ли внедрять зависимости в вызов
         $needInject = static::isNeedInject($call, $args);
         $anonymousArgs = array_values($args);
         if ($isController) {
@@ -246,11 +220,14 @@ class App extends ServerAbstract
                     };
                 }
             } else {
-                $call[0] = $container->get($call[0]);
+                try {
+                    $call[0] = $container->get($call[0]);
+                } catch (NotFoundExceptionInterface|ContainerExceptionInterface $e) {
+                    throw $e; // TODO
+                }
             }
         }
 
-        // Если нужно внедрить зависимости, внедряем их
         if ($needInject) {
             $call = static::resolveInject($plugin, $call, $args);
         }
@@ -287,15 +264,11 @@ class App extends ServerAbstract
     {
         $keepAlive = $request->header('connection');
         Context::destroy();
-        if ((
-                $keepAlive === null
-                && $request->protocolVersion() === '1.1'
-            )
+        if (($keepAlive === null
+                && $request->protocolVersion() === '1.1')
             || $keepAlive === 'keep-alive' || $keepAlive === 'Keep-Alive'
-            || (
-                is_a($response, Response::class)
-                && $response->getHeader('Transfer-Encoding') === 'chunked'
-            )
+            || (is_a($response, Response::class)
+                && $response->getHeader('Transfer-Encoding') === 'chunked')
         ) {
             $connection->send($response);
             return;
@@ -335,7 +308,6 @@ class App extends ServerAbstract
      */
     protected static function findFile(TcpConnection $connection, string $path, string $key, mixed $request): bool
     {
-        // Если в пути есть процентное кодирование, декодируем его
         if (preg_match('/%[0-9a-f]{2}/i', $path)) {
             $path = urldecode($path);
             if (static::unsafeUri($path)) {
@@ -346,54 +318,40 @@ class App extends ServerAbstract
             }
         }
 
-        // Разбиваем путь на части
         $pathExplodes = explode('/', trim($path, '/'));
         $plugin = '';
 
-        // Если путь указывает на плагин
         if (isset($pathExplodes[1]) && $pathExplodes[0] === config('app.plugin_uri', 'app')) {
             $plugin = $pathExplodes[1];
             $publicDir = static::config($plugin, 'app.public_path') ?: Path::basePath(config('app.plugin_alias', 'plugin') . "/$plugin/public");
             $path = substr($path, strlen("/" . config('app.plugin_uri', 'app') . "/$plugin/"));
         } else {
-            // Иначе используем общедоступную директорию
             $publicDir = Path::publicPath();
         }
 
-        // Получаем полный путь к файлу
         $file = "$publicDir/$path";
-
-        // Если файл не существует, возвращаем false
         if (!is_file($file)) {
             return false;
         }
 
-        // Если файл является PHP-файлом
         if (pathinfo($file, PATHINFO_EXTENSION) === 'php') {
-            // Если PHP-файлы не поддерживаются, возвращаем false
             if (!static::config($plugin, 'app.support_php_files', false)) {
                 return false;
             }
 
-            // Добавляем обратный вызов для выполнения PHP-файла
             static::collectCallbacks($key, [function () use ($file) {
                 return static::execPhpFile($file);
             }, '', '', '', '', null]);
 
-            // Получаем обратные вызовы
             static::getCallbacks($key, $request);
-
-            // Отправляем обратный вызов
             static::send($connection, static::execPhpFile($file), $request);
             return true;
         }
 
-        // Если статические файлы не поддерживаются, возвращаем false
         if (!static::config($plugin, 'static.enable', false)) {
             return false;
         }
 
-        // Добавляем обратный вызов для отправки файла
         static::collectCallbacks($key, [static::getCallback($plugin, '__static__', function ($request) use ($file, $plugin) {
             clearstatcache(true, $file);
             if (!is_file($file)) {
@@ -402,9 +360,8 @@ class App extends ServerAbstract
             }
             return (new Response())->file($file);
         }, withGlobalMiddleware: false), '', '', '', '', null]);
-        // Получаем обратные вызовы
+
         $callback = static::getCallbacks($key, $request);
-        // Отправляем обратный вызов
         static::send($connection, $callback($request), $request);
         return true;
     }
@@ -417,15 +374,13 @@ class App extends ServerAbstract
      * @param string $key Ключ.
      * @param mixed $request Запрос.
      * @param int $status Статус.
-     * @return bool Возвращает true, если маршрут найден, иначе возвращает false.
+     * @return callable|Closure|null Возвращает true, если маршрут найден, иначе возвращает false.
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
-     * @throws Throwable
      */
     protected static function findRoute(TcpConnection $connection, string $path, string $key, mixed $request, int &$status = 200): null|callable|Closure
     {
-        // Получаем информацию о маршруте
         $middlewares = [];
         $routeInfo = Router::dispatch($request->method(), $path);
         switch ($routeInfo[0]) {
@@ -436,36 +391,27 @@ class App extends ServerAbstract
                 $route = clone $routeInfo[3];
                 $app = $controller = $action = '';
 
-                // Установка параметров маршрута, если они есть
-                if ($args) {
-                    $route->setParams($args);
-                }
+                if ($args) $route->setParams($args);
 
-                // Получение middleware для маршрута
                 foreach ($route->getMiddleware() as $className) {
                     $middlewares[] = [$className, 'process'];
                 }
 
-                // Если обратный вызов - это массив
                 if (is_array($callback)) {
                     $controller = $callback[0];
                     $plugin = Plugin::app_by_class($controller);
                     $app = static::getAppByController($controller);
                     $action = static::getRealMethod($controller, $callback[1]) ?? '';
                 } else {
-                    // Иначе получаем плагин по пути
                     $plugin = Plugin::app_by_path($path);
                 }
 
-                // Получаем обратный вызов
                 $callback = static::getCallback($plugin, $app, $callback, $args, true, $middlewares);
-                // Собираем обратные вызовы
                 static::collectCallbacks($key, [$callback, $plugin, $app, $controller ?: '', $action, $route]);
-                // Получаем обратные вызовы
                 return static::getCallbacks($key, $request);
         }
+
         $status = $routeInfo[0] === Dispatcher::METHOD_NOT_ALLOWED ? 405 : 404;
-        // Если маршрут не найден, возвращаем false
         return false;
     }
 }

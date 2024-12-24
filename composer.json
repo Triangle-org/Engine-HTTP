@@ -32,6 +32,7 @@
     "triangle/router": "^1.1",
     "triangle/middleware": "^1.1"
   },
+  "minimum-stability": "alpha",
   "conflict": {
     "triangle/engine-ws": "*"
   }
