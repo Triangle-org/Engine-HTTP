@@ -177,7 +177,7 @@ class App extends \Triangle\Engine\App
      * @throws NotFoundExceptionInterface
      * @throws ContainerExceptionInterface
      */
-    public static function getCallback(string $plugin, string $app, $call, array $args = [], bool $withGlobalMiddleware = true, ?array $middlewares = []): callable|Closure
+    public static function getCallback(?string $plugin, string $app, $call, array $args = [], bool $withGlobalMiddleware = true, ?array $middlewares = []): callable|Closure
     {
         $plugin ??= '';
         $isController = is_array($call) && is_string($call[0]);
@@ -379,7 +379,7 @@ class App extends \Triangle\Engine\App
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
      */
-    protected static function findRoute(TcpConnection $connection, string $path, string $key, mixed $request, int &$status = 200): null|false|array
+    protected static function findRoute(TcpConnection $connection, string $path, string $key, mixed $request, int &$status = 200): null|array|false
     {
         $middlewares = [];
         $routeInfo = Router::dispatch($request->method(), $path);
