@@ -143,7 +143,7 @@ class App extends \Triangle\Engine\App
     {
         $plugin ??= '';
         $isController = is_array($call) && is_string($call[0]);
-        $container = static::container($plugin) ?? static::container();
+        $container = config('container', plugin: $plugin) ?? config('container');
         $middlewares = array_merge(
             $middlewares,
             Middleware::getMiddleware($plugin, $app, $isController ? $call[0] : '', $withGlobalMiddleware)
@@ -165,13 +165,13 @@ class App extends \Triangle\Engine\App
         $needInject = static::isNeedInject($call, $args);
         $anonymousArgs = array_values($args);
         if ($isController) {
-            $controllerReuse = static::config($plugin, 'app.controller_reuse', true);
+            $controllerReuse = config('app.controller_reuse', true, $plugin);
             if (!$controllerReuse) {
                 if ($needInject) {
                     $call = function ($request) use ($call, $plugin, $args, $container) {
                         $call[0] = $container->make($call[0]);
                         $reflector = static::getReflector($call);
-                        $args = array_values(static::resolveMethodDependencies($container, $request, array_merge($request->all(), $args), $reflector, static::config($plugin, 'app.debug')));
+                        $args = array_values(static::resolveMethodDependencies($container, $request, array_merge($request->all(), $args), $reflector, config('app.debug', plugin: $plugin)));
                         return $call(...$args);
                     };
                     $needInject = false;
@@ -285,7 +285,7 @@ class App extends \Triangle\Engine\App
 
         if (isset($pathExplodes[1]) && $pathExplodes[0] === config('app.plugin_uri', 'app')) {
             $plugin = $pathExplodes[1];
-            $publicDir = static::config($plugin, 'app.public_path') ?: Path::basePath(config('app.plugin_alias', 'plugin') . "/$plugin/public");
+            $publicDir = config('app.public_path', plugin: $plugin) ?: Path::basePath(config('app.plugin_alias', 'plugin') . "/$plugin/public");
             $path = substr($path, strlen("/" . config('app.plugin_uri', 'app') . "/$plugin/"));
         } else {
             $publicDir = Path::publicPath();
@@ -297,7 +297,7 @@ class App extends \Triangle\Engine\App
         }
 
         if (pathinfo($file, PATHINFO_EXTENSION) === 'php') {
-            if (!static::config($plugin, 'app.support_php_files', false)) {
+            if (!config('app.support_php_files', false, $plugin)) {
                 return false;
             }
 
@@ -310,7 +310,7 @@ class App extends \Triangle\Engine\App
             return true;
         }
 
-        if (!static::config($plugin, 'static.enable', false)) {
+        if (!config('static.enable', false, $plugin)) {
             return false;
         }
 
