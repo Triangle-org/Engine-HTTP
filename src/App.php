@@ -60,8 +60,8 @@ use Triangle\Middleware\MiddlewareInterface;
 use Triangle\Router;
 use Triangle\Router\Dispatcher;
 use Triangle\Router\RouteObject;
-use Triangle\Request;
-use Triangle\Response;
+use Triangle\Engine\Request;
+use Triangle\Engine\Response;
 use function array_merge;
 use function array_pop;
 use function array_reduce;
@@ -110,7 +110,7 @@ class App extends \Triangle\Engine\App
     {
         try {
             Context::set(TcpConnection::class, $connection);
-            Context::set(Request::class, $request);
+            Context::set(static::$requestClass, $request);
 
             $path = $request->path();
             $key = $request->method() . $path;
@@ -267,7 +267,7 @@ class App extends \Triangle\Engine\App
         if (($keepAlive === null
                 && $request->protocolVersion() === '1.1')
             || $keepAlive === 'keep-alive' || $keepAlive === 'Keep-Alive'
-            || (is_a($response, Response::class)
+            || ($response instanceof Response
                 && $response->getHeader('Transfer-Encoding') === 'chunked')
         ) {
             $connection->send($response);
