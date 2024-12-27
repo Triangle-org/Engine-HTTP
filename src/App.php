@@ -158,11 +158,11 @@ class App extends \Triangle\Engine\App
             } elseif ($middleware instanceof Closure) {
                 $middleware = call_user_func($middleware, $container);
             }
-            
+
             if (!$middleware instanceof MiddlewareInterface) {
                 throw new InvalidArgumentException('Неподдерживаемый тип middleware');
             }
-            
+
             $middlewares[$key][0] = $middleware;
         }
 
@@ -231,7 +231,7 @@ class App extends \Triangle\Engine\App
             $connection->send($response);
             return;
         }
-        
+
         $connection->close($response);
     }
 
@@ -310,7 +310,7 @@ class App extends \Triangle\Engine\App
                 $callback = static::getFallback($plugin);
                 return $callback($request);
             }
-            
+
             return (new Response())->file($file);
         }, withGlobalMiddleware: false), '', '', '', '', null]);
 
