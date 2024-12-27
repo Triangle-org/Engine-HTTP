@@ -328,12 +328,12 @@ class App extends \Triangle\Engine\App
      * @param string $key Ключ.
      * @param mixed $request Запрос.
      * @param int $status Статус.
-     * @return callable|Closure|null Возвращает true, если маршрут найден, иначе возвращает false.
+     * @return array|callable|Closure|false|null Возвращает true, если маршрут найден, иначе возвращает false.
      * @throws ContainerExceptionInterface
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
      */
-    protected static function findRoute(TcpConnection $tcpConnection, string $path, string $key, mixed $request, int &$status = 200): null|array|false
+    protected static function findRoute(TcpConnection $tcpConnection, string $path, string $key, mixed $request, int &$status = 200): null|array|callable|Closure|false
     {
         $middlewares = [];
         $routeInfo = Router::dispatch($request->method(), $path);
