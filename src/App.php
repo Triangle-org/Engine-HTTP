@@ -160,7 +160,7 @@ class App extends \Triangle\Engine\App
                 $middleware = call_user_func($middleware, $container);
             }
 
-            if (!$middleware instanceof MiddlewareInterface) {
+            if (!($middleware instanceof MiddlewareInterface)) {
                 throw new InvalidArgumentException('Неподдерживаемый тип middleware');
             }
 
