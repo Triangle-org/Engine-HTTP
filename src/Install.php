@@ -36,19 +36,21 @@ class Install
 
     /**
      * Установка плагина
-     * @return void
      */
     public static function install(): void
     {
-        if (!self::TRIANGLE_PLUGIN) return;
+        if (!self::TRIANGLE_PLUGIN) {
+            return;
+        }
+
         $sources = [__DIR__ . "/Config" => config_path()];
 
         foreach ($sources as $source => $target) {
             if (is_dir($source) && !empty($sourceFiles = glob($source . "/*.php"))) {
-                foreach ($sourceFiles as $file) {
-                    $path = path_combine($target, str_replace($source, "", $file));
+                foreach ($sourceFiles as $sourceFile) {
+                    $path = path_combine($target, str_replace($source, "", $sourceFile));
                     if (!file_exists($path)) {
-                        copy_dir($file, $path);
+                        copy_dir($sourceFile, $path);
                         echo "Создан $path\r\n";
                     }
                 }

@@ -84,15 +84,17 @@ class App extends \Triangle\Engine\App
             }
 
             $status = 200;
-
             if (static::unsafeUri($path)) {
                 $callback = static::getFallback(status: 422);
                 $request->plugin = $request->app = $request->controller = $request->action = '';
                 static::send($connection, $callback($request, 422), $request);
                 return;
-            } else if (static::findFile($connection, $path, $key, $request)) {
+            }
+            if (static::findFile($connection, $path, $key, $request)) {
                 return;
-            } else if ($callback = static::findRoute($connection, $path, $key, $request, $status)) {
+            }
+
+            if ($callback = static::findRoute($connection, $path, $key, $request, $status)) {
                 static::send($connection, $callback($request), $request);
                 return;
             }
@@ -121,8 +123,8 @@ class App extends \Triangle\Engine\App
 
             $callback = static::getCallbacks($key, $request);
             static::send($connection, $callback($request), $request);
-        } catch (Throwable $e) {
-            static::send($connection, static::exceptionResponse($e, $request), $request);
+        } catch (Throwable $throwable) {
+            static::send($connection, static::exceptionResponse($throwable, $request), $request);
         }
     }
 
@@ -156,9 +158,11 @@ class App extends \Triangle\Engine\App
             } elseif ($middleware instanceof Closure) {
                 $middleware = call_user_func($middleware, $container);
             }
+            
             if (!$middleware instanceof MiddlewareInterface) {
                 throw new InvalidArgumentException('Неподдерживаемый тип middleware');
             }
+            
             $middlewares[$key][0] = $middleware;
         }
 
@@ -182,11 +186,7 @@ class App extends \Triangle\Engine\App
                     };
                 }
             } else {
-                try {
-                    $call[0] = $container->get($call[0]);
-                } catch (NotFoundExceptionInterface|ContainerExceptionInterface $e) {
-                    throw $e; // TODO
-                }
+                $call[0] = $container->get($call[0]);
             }
         }
 
@@ -194,32 +194,28 @@ class App extends \Triangle\Engine\App
             $call = static::resolveInject($plugin, $call, $args);
         }
 
-        $callback = function ($request) use ($call, $anonymousArgs) {
+        $callback = function ($request) use ($call, $anonymousArgs): \Triangle\Engine\Response {
             try {
                 $response = $anonymousArgs ? $call($request, ...$anonymousArgs) : $call($request);
-            } catch (Throwable $e) {
-                return static::exceptionResponse($e, $request);
+            } catch (Throwable $throwable) {
+                return static::exceptionResponse($throwable, $request);
             }
 
             return $response instanceof Response ? $response : new Response(200, [], static::stringify($response));
         };
 
-        return $middlewares ? array_reduce($middlewares, function ($carry, $pipe) {
-            return function ($request) use ($carry, $pipe) {
-                try {
-                    return $pipe($request, $carry);
-                } catch (Throwable $e) {
-                    return static::exceptionResponse($e, $request);
-                }
-            };
+        return $middlewares ? array_reduce($middlewares, fn($carry, $pipe): \Closure => function ($request) use ($carry, $pipe) {
+            try {
+                return $pipe($request, $carry);
+            } catch (Throwable $throwable) {
+                return static::exceptionResponse($throwable, $request);
+            }
         }, $callback) : $callback;
     }
 
     /**
      * @param TcpConnection|mixed $connection
-     * @param mixed $response
      * @param Request|mixed $request
-     * @return void
      * @throws Throwable
      */
     protected static function send(mixed $connection, mixed $response, mixed $request): void
@@ -235,20 +231,16 @@ class App extends \Triangle\Engine\App
             $connection->send($response);
             return;
         }
+        
         $connection->close($response);
     }
 
 
-    /**
-     * @param string|null $plugin
-     * @param int $status
-     * @return Closure
-     */
     protected static function getFallback(?string $plugin = '', int $status = 404): Closure
     {
         $fallback = Router::getFallback($plugin ?? '', $status);
-        if (!$fallback) {
-            Router::fallback(fn() => not_found(), $plugin);
+        if ($fallback === null) {
+            Router::fallback(fn(): \Triangle\Response => not_found(), $plugin);
             $fallback = Router::getFallback($plugin ?? '', $status);
         }
 
@@ -258,7 +250,7 @@ class App extends \Triangle\Engine\App
     /**
      * Функция для поиска файла.
      *
-     * @param TcpConnection $connection Соединение TCP.
+     * @param TcpConnection $tcpConnection Соединение TCP.
      * @param string $path Путь.
      * @param string $key Ключ.
      * @param mixed $request Запрос.
@@ -268,14 +260,14 @@ class App extends \Triangle\Engine\App
      * @throws ReflectionException
      * @throws Throwable
      */
-    protected static function findFile(TcpConnection $connection, string $path, string $key, mixed $request): bool
+    protected static function findFile(TcpConnection $tcpConnection, string $path, string $key, mixed $request): bool
     {
         if (preg_match('/%[0-9a-f]{2}/i', $path)) {
             $path = urldecode($path);
             if (static::unsafeUri($path)) {
                 $callback = static::getFallback(status: 422);
                 $request->plugin = $request->app = $request->controller = $request->action = '';
-                static::send($connection, $callback($request, 422), $request);
+                static::send($tcpConnection, $callback($request, 422), $request);
                 return true;
             }
         }
@@ -301,12 +293,10 @@ class App extends \Triangle\Engine\App
                 return false;
             }
 
-            static::collectCallbacks($key, [function () use ($file) {
-                return static::execPhpFile($file);
-            }, '', '', '', '', null]);
+            static::collectCallbacks($key, [fn(): string|false => static::execPhpFile($file), '', '', '', '', null]);
 
             static::getCallbacks($key, $request);
-            static::send($connection, static::execPhpFile($file), $request);
+            static::send($tcpConnection, static::execPhpFile($file), $request);
             return true;
         }
 
@@ -320,18 +310,19 @@ class App extends \Triangle\Engine\App
                 $callback = static::getFallback($plugin);
                 return $callback($request);
             }
+            
             return (new Response())->file($file);
         }, withGlobalMiddleware: false), '', '', '', '', null]);
 
         $callback = static::getCallbacks($key, $request);
-        static::send($connection, $callback($request), $request);
+        static::send($tcpConnection, $callback($request), $request);
         return true;
     }
 
     /**
      * Функция для поиска маршрута.
      *
-     * @param TcpConnection $connection Соединение TCP.
+     * @param TcpConnection $tcpConnection Соединение TCP.
      * @param string $path Путь.
      * @param string $key Ключ.
      * @param mixed $request Запрос.
@@ -341,36 +332,33 @@ class App extends \Triangle\Engine\App
      * @throws NotFoundExceptionInterface
      * @throws ReflectionException
      */
-    protected static function findRoute(TcpConnection $connection, string $path, string $key, mixed $request, int &$status = 200): null|array|false
+    protected static function findRoute(TcpConnection $tcpConnection, string $path, string $key, mixed $request, int &$status = 200): null|array|false
     {
         $middlewares = [];
         $routeInfo = Router::dispatch($request->method(), $path);
-        switch ($routeInfo[0]) {
-            case Dispatcher::FOUND:
-                $routeInfo[0] = 'route';
-                $callback = $routeInfo[1];
-                $args = !empty($routeInfo[2]) ? $routeInfo[2] : [];
-                $route = clone $routeInfo[3];
-                $app = $controller = $action = '';
-
-                if ($args) $route->setParams($args);
-
-                foreach ($route->getMiddleware() as $className) {
-                    $middlewares[] = [$className, 'process'];
-                }
-
-                if (is_array($callback)) {
-                    $controller = $callback[0];
-                    $plugin = Plugin::app_by_class($controller);
-                    $app = static::getAppByController($controller);
-                    $action = static::getRealMethod($controller, $callback[1]) ?? '';
-                } else {
-                    $plugin = Plugin::app_by_path($path);
-                }
-
-                $callback = static::getCallback($plugin, $app, $callback, $args, true, $middlewares);
-                static::collectCallbacks($key, [$callback, $plugin, $app, $controller ?: '', $action, $route]);
-                return static::getCallbacks($key, $request);
+        if ($routeInfo[0] === Dispatcher::FOUND) {
+            $routeInfo[0] = 'route';
+            $callback = $routeInfo[1];
+            $args = empty($routeInfo[2]) ? [] : $routeInfo[2];
+            $route = clone $routeInfo[3];
+            $app = $controller = $action = '';
+            if ($args) {
+                $route->setParams($args);
+            }
+            foreach ($route->getMiddleware() as $className) {
+                $middlewares[] = [$className, 'process'];
+            }
+            if (is_array($callback)) {
+                $controller = $callback[0];
+                $plugin = Plugin::app_by_class($controller);
+                $app = static::getAppByController($controller);
+                $action = static::getRealMethod($controller, $callback[1]) ?? '';
+            } else {
+                $plugin = Plugin::app_by_path($path);
+            }
+            $callback = static::getCallback($plugin, $app, $callback, $args, true, $middlewares);
+            static::collectCallbacks($key, [$callback, $plugin, $app, $controller ?: '', $action, $route]);
+            return static::getCallbacks($key, $request);
         }
 
         $status = $routeInfo[0] === Dispatcher::METHOD_NOT_ALLOWED ? 405 : 404;

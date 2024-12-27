@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 return [
     'debug' => (bool)env('APP_DEBUG', false),
     'name' => env('APP_NAME', 'Triangle App'),
