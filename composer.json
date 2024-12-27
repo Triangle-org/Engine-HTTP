@@ -32,7 +32,9 @@
     "triangle/router": "^1.1",
     "triangle/middleware": "^1.1"
   },
-  "minimum-stability": "alpha",
+  "require-dev": {
+    "rector/rector": "*"
+  },
   "conflict": {
     "triangle/engine-ws": "*"
   }
