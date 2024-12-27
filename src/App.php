@@ -90,7 +90,7 @@ class App extends \Triangle\Engine\App
                 static::send($connection, $callback($request, 422), $request);
                 return;
             }
-            
+
             if (static::findFile($connection, $path, $key, $request)) {
                 return;
             }
@@ -346,11 +346,11 @@ class App extends \Triangle\Engine\App
             if ($args) {
                 $route->setParams($args);
             }
-            
+
             foreach ($route->getMiddleware() as $className) {
                 $middlewares[] = [$className, 'process'];
             }
-            
+
             if (is_array($callback)) {
                 $controller = $callback[0];
                 $plugin = Plugin::app_by_class($controller);
@@ -359,7 +359,7 @@ class App extends \Triangle\Engine\App
             } else {
                 $plugin = Plugin::app_by_path($path);
             }
-            
+
             $callback = static::getCallback($plugin, $app, $callback, $args, true, $middlewares);
             static::collectCallbacks($key, [$callback, $plugin, $app, $controller ?: '', $action, $route]);
             return static::getCallbacks($key, $request);
