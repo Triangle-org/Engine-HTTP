@@ -30,7 +30,7 @@
     "php": "^8",
     "triangle/engine": "^8",
     "triangle/router": "^2",
-    "triangle/middleware": "^1"
+    "triangle/middleware": "^2"
   },
   "require-dev": {
     "rector/rector": "*"
