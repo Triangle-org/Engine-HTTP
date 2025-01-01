@@ -28,7 +28,6 @@ namespace Triangle\Http;
 
 use Closure;
 use Illuminate\Database\Eloquent\Model;
-use InvalidArgumentException;
 use localzet\Server\Connection\ConnectionInterface;
 use localzet\Server\Connection\TcpConnection;
 use Psr\Container\ContainerExceptionInterface;
@@ -41,9 +40,9 @@ use Triangle\Engine\Plugin;
 use Triangle\Engine\Request;
 use Triangle\Engine\Response;
 use Triangle\Middleware\Bootstrap as Middleware;
-use Triangle\Middleware\MiddlewareInterface;
 use Triangle\Router;
 use Triangle\Router\Dispatcher;
+use Triangle\Router\RouteObject;
 use function array_merge;
 use function array_reduce;
 use function array_values;
@@ -142,15 +141,12 @@ class App extends \Triangle\Engine\App
      * @throws NotFoundExceptionInterface
      * @throws ContainerExceptionInterface
      */
-    public static function getCallback(?string $plugin, string $app, $call, array $args = [], bool $withGlobalMiddleware = true, ?array $middlewares = []): callable|Closure
+    public static function getCallback(?string $plugin, string $app, $call, array $args = [], bool $withGlobalMiddleware = true, ?RouteObject $route = null): callable|Closure
     {
         $plugin ??= '';
         $isController = is_array($call) && is_string($call[0]);
         $container = config('container', plugin: $plugin) ?? config('container');
-        $middlewares = array_merge(
-            $middlewares,
-            Middleware::getMiddleware($plugin, $app, $isController ? $call[0] : '', $withGlobalMiddleware)
-        );
+        $middlewares = Middleware::getMiddleware($plugin, $app, $call, $route, $withGlobalMiddleware);
 
         foreach ($middlewares as $key => $item) {
             $middleware = $item[0];
@@ -158,10 +154,6 @@ class App extends \Triangle\Engine\App
                 $middleware = $container->get($middleware);
             } elseif ($middleware instanceof Closure) {
                 $middleware = call_user_func($middleware, $container);
-            }
-
-            if (!($middleware instanceof MiddlewareInterface)) {
-                throw new InvalidArgumentException('Неподдерживаемый тип middleware');
             }
 
             $middlewares[$key][0] = $middleware;
@@ -335,7 +327,6 @@ class App extends \Triangle\Engine\App
      */
     protected static function findRoute(TcpConnection $tcpConnection, string $path, string $key, mixed $request, int &$status = 200): null|array|callable|Closure|false
     {
-        $middlewares = [];
         $routeInfo = Router::dispatch($request->method(), $path);
         if ($routeInfo[0] === Dispatcher::FOUND) {
             $routeInfo[0] = 'route';
@@ -343,12 +334,9 @@ class App extends \Triangle\Engine\App
             $args = empty($routeInfo[2]) ? [] : $routeInfo[2];
             $route = clone $routeInfo[3];
             $app = $controller = $action = '';
+
             if ($args) {
                 $route->setParams($args);
-            }
-
-            foreach ($route->getMiddleware() as $className) {
-                $middlewares[] = [$className, 'process'];
             }
 
             if (is_array($callback)) {
@@ -360,7 +348,7 @@ class App extends \Triangle\Engine\App
                 $plugin = Plugin::app_by_path($path);
             }
 
-            $callback = static::getCallback($plugin, $app, $callback, $args, true, $middlewares);
+            $callback = static::getCallback($plugin, $app, $callback, $args, true, $route);
             static::collectCallbacks($key, [$callback, $plugin, $app, $controller ?: '', $action, $route]);
             return static::getCallbacks($key, $request);
         }
