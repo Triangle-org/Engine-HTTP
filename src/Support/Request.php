@@ -28,7 +28,6 @@ namespace Triangle;
 
 use Triangle\Router\RouteObject;
 
-#[\AllowDynamicProperties]
 class Request extends Engine\Request
 {
     /**
