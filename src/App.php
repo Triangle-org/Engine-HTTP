@@ -27,7 +27,6 @@
 namespace Triangle\Http;
 
 use Closure;
-use Illuminate\Database\Eloquent\Model;
 use localzet\Server\Connection\ConnectionInterface;
 use localzet\Server\Connection\TcpConnection;
 use Psr\Container\ContainerExceptionInterface;
