@@ -5,7 +5,7 @@
  * @link        https://github.com/Triangle-org/Http
  *
  * @author      Ivan Zorin <creator@localzet.com>
- * @copyright   Copyright (c) 2023-2025 Triangle Framework Team
+ * @copyright   Copyright © 2016-2026 Localzet Group. All rights reserved.
  * @license     https://www.gnu.org/licenses/agpl-3.0 GNU Affero General Public License v3.0
  *
  *              This program is free software: you can redistribute it and/or modify
@@ -36,12 +36,8 @@ return [
     'controller_suffix' => env('CONTROLLER_SUFFIX', ''),
     'controller_reuse' => env('CONTROLLER_REUSE', true),
 
-    'headers' => [
+    'http_headers' => [
         'Content-Language' => 'ru',
-        'Access-Control-Allow-Origin' => '*',
-        'Access-Control-Allow-Credentials' => 'true',
-        'Access-Control-Allow-Methods' => '*',
-        'Access-Control-Allow-Headers' => '*',
         'X-Powered-By' => 'Triangle-Core/' . Composer\InstalledVersions::getVersion('triangle/engine'),
     ],
 ];

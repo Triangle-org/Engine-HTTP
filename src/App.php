@@ -5,7 +5,7 @@
  * @link        https://github.com/Triangle-org/Http
  *
  * @author      Ivan Zorin <creator@localzet.com>
- * @copyright   Copyright (c) 2023-2025 Triangle Framework Team
+ * @copyright   Copyright © 2016-2026 Localzet Group. All rights reserved.
  * @license     https://www.gnu.org/licenses/agpl-3.0 GNU Affero General Public License v3.0
  *
  *              This program is free software: you can redistribute it and/or modify
@@ -29,6 +29,7 @@ namespace Triangle\Http;
 use Closure;
 use localzet\Server\Connection\ConnectionInterface;
 use localzet\Server\Connection\TcpConnection;
+use localzet\Server\Protocols\Http\Response as ServerResponse;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
 use ReflectionException;
@@ -186,14 +187,14 @@ class App extends \Triangle\Engine\App
             $call = static::resolveInject($plugin, $call, $args);
         }
 
-        $callback = function ($request) use ($call, $anonymousArgs): \Triangle\Engine\Response {
+        $callback = function ($request) use ($call, $anonymousArgs): ServerResponse {
             try {
                 $response = $anonymousArgs ? $call($request, ...$anonymousArgs) : $call($request);
             } catch (Throwable $throwable) {
                 return static::exceptionResponse($throwable, $request);
             }
 
-            return $response instanceof Response ? $response : new Response(200, [], static::stringify($response));
+            return static::normalizeResponse($response);
         };
 
         return $middlewares ? array_reduce($middlewares, fn($carry, $pipe): \Closure => function ($request) use ($carry, $pipe) {
@@ -217,7 +218,7 @@ class App extends \Triangle\Engine\App
         if (($keepAlive === null
                 && $request->protocolVersion() === '1.1')
             || $keepAlive === 'keep-alive' || $keepAlive === 'Keep-Alive'
-            || ($response instanceof Response
+            || ($response instanceof ServerResponse
                 && $response->getHeader('Transfer-Encoding') === 'chunked')
         ) {
             $connection->send($response);
@@ -225,6 +226,13 @@ class App extends \Triangle\Engine\App
         }
 
         $connection->close($response);
+    }
+
+    protected static function normalizeResponse(mixed $response): ServerResponse
+    {
+        return $response instanceof ServerResponse
+            ? $response
+            : new Response(200, [], static::stringify($response));
     }
 
 
